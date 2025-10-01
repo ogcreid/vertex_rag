@@ -1,185 +1,163 @@
-// server.js 
-//
-// Admin panel (vanilla JS + Express API)
-// - Serves static UI from /public
-// - Connects to Postgres (Cloud SQL socket or TCP)
-// - Tenant is chosen via X-DB-Name header (validated against ALLOWED_DBS)
-// 
-// Required env:
-//   INSTANCE_CONNECTION_NAME  (e.g. "proj:region:instance")  [preferred on Cloud Run]
-//   or DB_HOST / DB_PORT      (for TCP connections)
-//   DB_USER, DB_PASS
-//   ALLOWED_DBS               comma-separated (e.g. "tenant1,tenant2")
-// Optional env:
-//   DB_SSL=true               (enables TLS for TCP connections)
-//   SOURCE_COMMIT             (shown in /api/version)
+// server.js — tiny visual self-test for Cloud Run
+// Shows results directly in the browser AND logs to Cloud Run stdout.
 
-const path = require('path');
-const express = require('express');
-const { Pool } = require('pg');
+// 1) Setup ---------------------------------------------------------------
+const express = require('express');              // (1) import express
+const app = express();                           // (2) create app
+app.set('trust proxy', true);                    // (3) trust Cloud Run proxy
+app.use(express.json());                         // (4) json parser
+console.log('=== [SERVER] starting test server ==='); // (5) server boot log
 
-const app = express();
-app.set('trust proxy', true);
-app.use(express.json());
-// TEMP: log every request
-app.use((req, _res, next) => {
-  console.log(`[req] ${req.method} ${req.url}  rev=${process.env.K_REVISION || 'n/a'}`);
-  next();
-});
-
-// TEMP: print registered GET routes on startup
-function printRoutes() {
-  const routes = [];
-  app._router.stack.forEach((l) => {
-    if (l.route && l.route.path && l.route.methods.get) {
-      routes.push(l.route.path);
-    }
-  });
-  console.log('[routes:get]', routes);
-}
-
-
-
-// ---- Env & connection config ----
-const INSTANCE_CONNECTION_NAME = process.env.INSTANCE_CONNECTION_NAME || '';
-const DB_USER  = process.env.DB_USER || 'postgres';
-const DB_PASS  = process.env.DB_PASS || '';
-const DB_HOST  = process.env.DB_HOST || '127.0.0.1';
-const DB_PORT  = Number(process.env.DB_PORT || 5432);
-const DB_SSL   = String(process.env.DB_SSL || '').toLowerCase() === 'true';
-
-// allowlist of db names (required for safety)
-const ALLOWED_DBS = (process.env.ALLOWED_DBS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-if (ALLOWED_DBS.length === 0) {
-  console.warn('[WARN] ALLOWED_DBS is empty. Set it to a comma-separated list of permitted databases.');
-}
-
-// Build pg config per db
-function buildPgConfig(dbname) {
-  const base = {
-    user: DB_USER,
-    password: DB_PASS,
-    database: dbname,
+// 2) API: simple test endpoint ------------------------------------------
+app.get('/api/test', (req, res) => {
+  console.log('=== [SERVER] /api/test hit ===');           // (6) server sees API hit
+  const t0 = Date.now();                                   // (7) start timing
+  // pretend to do a couple of checks
+  const checks = [
+    { name: 'Process alive', ok: true },
+    { name: 'Env PORT present', ok: !!process.env.PORT },
+    { name: 'K_REVISION present', ok: !!process.env.K_REVISION },
+  ];
+  const allOk = checks.every(c => c.ok);                   // (8) aggregate result
+  const payload = {
+    ok: allOk,
+    checks,
+    serverTime: new Date().toISOString(),
+    revision: process.env.K_REVISION || 'unknown',
+    service: process.env.K_SERVICE || 'unknown',
+    latencyMs: Date.now() - t0
   };
-
-  if (INSTANCE_CONNECTION_NAME) {
-    // Cloud SQL Unix domain socket (recommended on Cloud Run)
-    return { ...base, host: `/cloudsql/${INSTANCE_CONNECTION_NAME}` };
-  }
-
-  // TCP fallback (e.g., local dev, or a proxy)
-  const cfg = { ...base, host: DB_HOST, port: DB_PORT };
-  if (DB_SSL) cfg.ssl = { rejectUnauthorized: false };
-  return cfg;
-}
-
-// Validate/resolve db name from header (or default to the first allowlisted db)
-function getDbName(req) {
-  const header = req.header('X-DB-Name');
-  const dbname = header || ALLOWED_DBS[0];
-  if (!dbname) throw new Error('No database specified and ALLOWED_DBS is empty.');
-  if (!ALLOWED_DBS.includes(dbname)) {
-    throw new Error(`Database "${dbname}" is not in ALLOWED_DBS.`);
-  }
-  return dbname;
-}
-
-// Connection pool per db
-const pools = new Map();
-function getPool(dbname) {
-  if (!pools.has(dbname)) {
-    pools.set(dbname, new Pool(buildPgConfig(dbname)));
-  }
-  return pools.get(dbname);
-}
-
-// ---- Static UI ----
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ---- Meta/health ----
-app.get('/api/healthz', (_req, res) => res.status(200).send('ok'));
-app.get('/api/version', (_req, res) => {
-  res.json({
-    k_service: process.env.K_SERVICE || null,
-    k_revision: process.env.K_REVISION || null,
-    commit: process.env.SOURCE_COMMIT || null
-  });
+  console.log('=== [SERVER] /api/test result:', payload);  // (9) log result
+  res.json(payload);                                       // (10) send JSON
 });
 
-// ---- API: App Config ----
+// 3) UI: one page, styled, renders results in the DIV --------------------
+app.get('/', (_req, res) => {
+  console.log('=== [SERVER] serving / ==='); // (11)
+  res.type('html').send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Cloud Run Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root { --ok:#0a7b34; --bad:#b00020; --fg:#111; --muted:#667; --bg:#f7f7fa; }
+    body { margin:0; font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--fg); background:var(--bg);}
+    .wrap { max-width:780px; margin:40px auto; padding:24px; background:#fff; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,.08);}
+    h1 { margin:0 0 6px 0; font-size:22px; }
+    .muted { color:var(--muted); font-size:14px; }
+    .grid { display:grid; grid-template-columns: 180px 1fr; gap:10px 16px; margin-top:16px; }
+    .label { color:var(--muted); }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; color:#fff; }
+    .pill.ok { background:var(--ok); }
+    .pill.bad { background:var(--bad); }
+    .checks { margin-top:16px; border-collapse:collapse; width:100%; }
+    .checks th, .checks td { padding:10px 12px; border-bottom:1px solid #eee; text-align:left; }
+    .footer { margin-top:18px; font-size:13px; color:var(--muted); }
+    .btn { margin-top:16px; padding:8px 14px; border-radius:8px; border:1px solid #ddd; background:#fafafa; cursor:pointer; }
+    pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; background:#fbfbff; padding:12px; border-radius:10px; border:1px solid #eee;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Cloud Run Self-Test</h1>
+    <div class="muted">This page calls <code>/api/test</code> and renders the result below.</div>
 
-// GET all config rows
-app.get('/api/app-config', async (req, res, next) => {
-  try {
-    const db = getDbName(req);
-    const pool = getPool(db);
-    const { rows } = await pool.query(
-      `SELECT config_key, config_value, description, updated_at
-         FROM app_config
-        ORDER BY config_key;`
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
+    <div class="grid">
+      <div class="label">Overall</div>
+      <div id="overall"><span class="pill bad">pending…</span></div>
 
-// UPSERT a config key/value
-app.post('/api/app-config', async (req, res, next) => {
-  try {
-    const db = getDbName(req);
-    const pool = getPool(db);
+      <div class="label">Service</div>
+      <div id="service">—</div>
 
-    const { config_key, config_value, description } = req.body || {};
-    if (!config_key || typeof config_key !== 'string') {
-      return res.status(400).json({ error: 'config_key (string) is required' });
+      <div class="label">Revision</div>
+      <div id="revision">—</div>
+
+      <div class="label">Server time</div>
+      <div id="time">—</div>
+
+      <div class="label">Latency</div>
+      <div id="latency">—</div>
+    </div>
+
+    <table class="checks" id="checksTbl" aria-label="Checks table">
+      <thead><tr><th>Check</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <button class="btn" id="rerunBtn">Re-run test</button>
+
+    <div class="footer">Open DevTools → Console to see browser logs. Server logs are in Cloud Run <em>stdout</em>.</div>
+
+    <details style="margin-top:16px;">
+      <summary>Raw JSON</summary>
+      <pre id="raw">(waiting)</pre>
+    </details>
+  </div>
+
+  <script>
+    console.log('[BROWSER] page script loaded');                // (A) browser boot log
+    const els = {
+      overall:  document.getElementById('overall'),
+      service:  document.getElementById('service'),
+      revision: document.getElementById('revision'),
+      time:     document.getElementById('time'),
+      latency:  document.getElementById('latency'),
+      tbody:    document.querySelector('#checksTbl tbody'),
+      raw:      document.getElementById('raw'),
+      rerun:    document.getElementById('rerunBtn'),
+    };
+
+    async function runTest() {
+      console.log('[BROWSER] calling /api/test');               // (B)
+      els.overall.innerHTML = '<span class="pill bad">running…</span>';
+      try {
+        const t0 = performance.now();
+        const resp = await fetch('/api/test');
+        const data = await resp.json();
+        const t = Math.max(0, performance.now() - t0).toFixed(1);
+        console.log('[BROWSER] got response', data);            // (C)
+
+        // Overall
+        els.overall.innerHTML = data.ok
+          ? '<span class="pill ok">OK</span>'
+          : '<span class="pill bad">FAILED</span>';
+
+        // Header fields
+        els.service.textContent  = data.service;
+        els.revision.textContent = data.revision;
+        els.time.textContent     = new Date(data.serverTime).toLocaleString();
+        els.latency.textContent  = data.latencyMs + ' ms (server), ' + t + ' ms (browser)';
+
+        // Checks table
+        els.tbody.innerHTML = '';
+        (data.checks || []).forEach(c => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>'+c.name+'</td><td>' +
+            (c.ok ? '<span class="pill ok">OK</span>' : '<span class="pill bad">FAIL</span>') +
+          '</td>';
+          els.tbody.appendChild(tr);
+        });
+
+        // Raw JSON
+        els.raw.textContent = JSON.stringify(data, null, 2);
+
+      } catch (e) {
+        console.error('[BROWSER] error', e);                    // (D)
+        els.overall.innerHTML = '<span class="pill bad">ERROR</span>';
+        els.raw.textContent = String(e);
+      }
     }
 
-    const sql = `
-      INSERT INTO app_config (config_key, config_value, description, updated_at)
-      VALUES ($1, $2, $3, now())
-      ON CONFLICT (config_key)
-      DO UPDATE SET config_value = EXCLUDED.config_value,
-                    description = EXCLUDED.description,
-                    updated_at = now()
-      RETURNING config_key, config_value, description, updated_at;
-    `;
-    const { rows } = await pool.query(sql, [
-      config_key,
-      config_value ?? null,
-      description ?? null,
-    ]);
-    res.json(rows[0]);
-  } catch (err) { next(err); }
+    window.addEventListener('DOMContentLoaded', runTest);       // (E)
+    els.rerun.addEventListener('click', runTest);               // (F)
+  </script>
+</body>
+</html>`);
 });
 
-// ---- SPA fallback (Express 5-safe) ----
-// Return index.html for anything not matched above
-app.get(/.*/, (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ---- Error handler ----
-app.use((err, _req, res, _next) => {
-  console.error('[ERROR]', err);
-  const msg = err?.message || 'Internal Server Error';
-  res.status(400).json({ error: msg });
-});
-
-// ---- Start server ----
+// 4) Start ---------------------------------------------------------------
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`Admin panel listening on :${PORT}`);
-});
-
-// ---- Start server (single call) ----
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Admin panel listening on :${PORT}`);
-  console.log(`Revision: ${process.env.K_REVISION || 'n/a'}`);
-  console.log(`Service:  ${process.env.K_SERVICE  || 'n/a'}`);
-  console.log(`Commit:   ${process.env.SOURCE_COMMIT || 'n/a'}`);
-  printRoutes(); // TEMP
+  console.log(\`=== [SERVER] listening on :\${PORT} ===\`); // (12) server listening
 });
