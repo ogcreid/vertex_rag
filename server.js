@@ -4,7 +4,7 @@
 // - Serves static UI from /public
 // - Connects to Postgres (Cloud SQL socket or TCP)
 // - Tenant is chosen via X-DB-Name header (validated against ALLOWED_DBS)
-//
+// 
 // Required env:
 //   INSTANCE_CONNECTION_NAME  (e.g. "proj:region:instance")  [preferred on Cloud Run]
 //   or DB_HOST / DB_PORT      (for TCP connections)
