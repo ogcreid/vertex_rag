@@ -21,6 +21,24 @@ const { Pool } = require('pg');
 const app = express();
 app.set('trust proxy', true);
 app.use(express.json());
+// TEMP: log every request
+app.use((req, _res, next) => {
+  console.log(`[req] ${req.method} ${req.url}  rev=${process.env.K_REVISION || 'n/a'}`);
+  next();
+});
+
+// TEMP: print registered GET routes on startup
+function printRoutes() {
+  const routes = [];
+  app._router.stack.forEach((l) => {
+    if (l.route && l.route.path && l.route.methods.get) {
+      routes.push(l.route.path);
+    }
+  });
+  console.log('[routes:get]', routes);
+}
+
+
 
 // ---- Env & connection config ----
 const INSTANCE_CONNECTION_NAME = process.env.INSTANCE_CONNECTION_NAME || '';
@@ -154,4 +172,9 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Admin panel listening on :${PORT}`);
+});
+
+app.listen(PORT, () => {
+  console.log(`Admin panel listening on :${PORT}`);
+  printRoutes(); // TEMP
 });
