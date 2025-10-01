@@ -20,6 +20,14 @@ const dbHost = process.env.DB_HOST || '127.0.0.1'; // socket path or IP
 const dbPort = process.env.DB_PORT || 5432;
 const allowedDbs = (process.env.ALLOWED_DBS || '').split(',').map(s => s.trim());
 
+app.get('/api/version', (req, res) => {
+  res.json({
+    k_service: process.env.K_SERVICE,
+    k_revision: process.env.K_REVISION,
+    commit: process.env.SOURCE_COMMIT || null
+  });
+});
+
 // Default to the first allowed DB if no header is passed
 function getDbName(req) {
   const dbName = req.header('X-DB-Name') || allowedDbs[0];
