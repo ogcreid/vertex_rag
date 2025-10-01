@@ -2,7 +2,7 @@
 // Shows results directly in the browser AND logs to Cloud Run stdout.
 
 // 1) Setup ---------------------------------------------------------------
-const express = require('express');              // (1) import express
+const express = require('express');              // (1) import express 
 const app = express();                           // (2) create app
 app.set('trust proxy', true);                    // (3) trust Cloud Run proxy
 app.use(express.json());                         // (4) json parser
