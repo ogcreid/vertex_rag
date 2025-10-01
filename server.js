@@ -1,8 +1,8 @@
 // server.js
-// 
+//  
 // Simple admin panel API for app_config etc.
 // Runs on Cloud Run, connects to Postgres via Cloud SQL socket or host.
-//
+// 
 // Requires environment variables:
 //   DB_USER, DB_PASS, DB_HOST, DB_PORT, ALLOWED_DBS
 
