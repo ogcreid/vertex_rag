@@ -1,5 +1,5 @@
 // server.js
-//
+// 
 // Simple admin panel API for app_config etc.
 // Runs on Cloud Run, connects to Postgres via Cloud SQL socket or host.
 //
