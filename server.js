@@ -1,4 +1,4 @@
-// server.js
+// server.js 
 //
 // Admin panel (vanilla JS + Express API)
 // - Serves static UI from /public
