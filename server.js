@@ -174,7 +174,12 @@ app.listen(PORT, () => {
   console.log(`Admin panel listening on :${PORT}`);
 });
 
+// ---- Start server (single call) ----
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Admin panel listening on :${PORT}`);
+  console.log(`Revision: ${process.env.K_REVISION || 'n/a'}`);
+  console.log(`Service:  ${process.env.K_SERVICE  || 'n/a'}`);
+  console.log(`Commit:   ${process.env.SOURCE_COMMIT || 'n/a'}`);
   printRoutes(); // TEMP
 });
